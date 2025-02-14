@@ -1,8 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import MonacoEditor from "react-monaco-editor";
 import Select from "react-select";
-import { FaSun, FaMoon, FaUserPlus, FaTimes, FaClipboard } from "react-icons/fa";
+import { FaSun, FaMoon, FaUserPlus } from "react-icons/fa";
+import RoomCodeComponent from "./RoomCode";
+import { io } from "socket.io-client";
+
+let socket = null; // Prevents automatic connection
 
 const CodeEditor = () => {
   const [files, setFiles] = useState([
@@ -13,6 +17,7 @@ const CodeEditor = () => {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [roomCode, setRoomCode] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [isConnected, setIsConnected] = useState(false); // ✅ Track connection
 
   const languageOptions = [
     { value: "c", label: "C", id: 50 },
@@ -20,6 +25,16 @@ const CodeEditor = () => {
     { value: "python", label: "Python", id: 71 },
     { value: "javascript", label: "JavaScript", id: 63 },
   ];
+
+  useEffect(() => {
+    return () => {
+      if (socket) {
+        socket.disconnect(); // ✅ Cleanup on unmount
+        socket = null;
+        setIsConnected(false);
+      }
+    };
+  }, []);
 
   const compileCode = async (sourceCode, language) => {
     setOutput("Compiling...");
@@ -39,7 +54,7 @@ const CodeEditor = () => {
         },
         {
           headers: {
-            "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY", // Replace with your actual API key
+            "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",
             "X-RapidAPI-Host": "judge0-ce.p.rapidapi.com",
           },
         }
@@ -51,10 +66,24 @@ const CodeEditor = () => {
     }
   };
 
-  const generateRoomCode = () => {
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const handleJoinRoom = (code) => {
+    if (!code.trim()) {
+      alert("Please enter a valid room code!");
+      return;
+    }
+
+    if (!isConnected) {
+      socket = io("http://localhost:5000"); // ✅ Connect only when joining
+      setIsConnected(true);
+
+      socket.on("room_joined", (message) => alert(message));
+      socket.on("receive_message", (msg) => console.log("Message:", msg));
+    }
+
+    socket.emit("join_room", code);
+    socket.emit("message", "hello"); // ✅ Fixed message format
     setRoomCode(code);
-    setShowModal(true);
+    setShowModal(false);
   };
 
   return (
@@ -76,7 +105,7 @@ const CodeEditor = () => {
               control: (provided) => ({
                 ...provided,
                 width: 150,
-                backgroundColor: "#000", // Always black
+                backgroundColor: "#000",
                 color: "white",
               }),
               singleValue: (provided) => ({ ...provided, color: "white" }),
@@ -118,15 +147,15 @@ const CodeEditor = () => {
         />
       </div>
 
-      {/* Right Side: Output */}
-      <div style={{ flex: 0.5, padding: "20px", backgroundColor: isDarkMode ? "#252526" : "#f0f0f0" }}>
+      {/* Right Side: Output and Actions */}
+      <div style={{ flex: 0.5, padding: "20px", backgroundColor: isDarkMode ? "#252526" : "#f0f0f0", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2>Output</h2>
           <div style={{ display: "flex", gap: "10px" }}>
             <button style={{ background: "none", border: "none", color: "inherit", fontSize: "1.5rem", cursor: "pointer" }} onClick={() => setIsDarkMode(!isDarkMode)}>
               {isDarkMode ? <FaSun /> : <FaMoon />}
             </button>
-            <button style={{ background: "none", border: "none", color: "inherit", fontSize: "1.5rem", cursor: "pointer" }} onClick={generateRoomCode}>
+            <button style={{ background: "none", border: "none", color: "inherit", fontSize: "1.5rem", cursor: "pointer" }} onClick={() => setShowModal(true)}>
               <FaUserPlus />
             </button>
           </div>
@@ -136,16 +165,7 @@ const CodeEditor = () => {
         </pre>
       </div>
 
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <h3>Share Room Code</h3>
-            <p><strong>Code:</strong> {roomCode}</p>
-            <button onClick={() => navigator.clipboard.writeText(roomCode)}><FaClipboard /> Copy</button>
-            <button onClick={() => setShowModal(false)}><FaTimes /> Close</button>
-          </div>
-        </div>
-      )}
+      {showModal && <RoomCodeComponent onJoinRoom={handleJoinRoom} />}
     </div>
   );
 };
